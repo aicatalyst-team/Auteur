@@ -5,9 +5,10 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowLeft, Loader2, Save, GitBranch, Download, History, AlertCircle, ShieldCheck,
+  ArrowLeft, Loader2, Save, GitBranch, Download, History, AlertCircle, ShieldCheck, Sparkles,
 } from 'lucide-vue-next'
 import ErrorBanner from '../components/ErrorBanner.vue'
+import PresetOptimizeDialog from '../components/PresetOptimizeDialog.vue'
 import {
   getPreset, createPreset, updatePreset, saveAsNewVersion, listPresetVersions,
   rollbackPreset, type Preset, type PresetVersion,
@@ -206,6 +207,86 @@ async function toggleVersions() {
   showVersions.value = !showVersions.value
   if (showVersions.value) await loadVersions()
 }
+
+// ========== AI 沟通优化 ==========
+// 与后端 PresetOptimizeService.SECTION_FIELDS 对齐;改这里时记得同步后端。
+const SECTION_FIELDS: Record<TabKey, string[]> = {
+  basic:       ['displayName', 'description', 'visibility', 'ownerName'],
+  input:       ['inputSchemaJson'],
+  brainstorm:  ['brainstormPromptYaml'],
+  script:      ['scriptPromptYaml'],
+  critic:      ['scriptCriticPromptYaml', 'scriptCriticThreshold'],
+  storyboard:  ['storyboardPromptYaml', 'storyboardMode', 'assistantDirectorPromptYaml'],
+  image:       ['imageConfigJson'],
+  voice:       ['voiceConfigJson'],
+  bgm:         ['bgmMoodPromptYaml', 'bgmEnabled', 'bgmLocked'],
+  composition: ['compositionId', 'formatWidth', 'formatHeight', 'watermarkText', 'hookSegmentEnabled'],
+}
+
+const optimizeSection = ref<TabKey | null>(null)
+
+function tabLabel(k: TabKey): string {
+  return tabs.find((t) => t.key === k)?.label ?? k
+}
+
+/** 收集当前 section 在编辑器里的草稿值,JSON tab 用 textarea 文本反序列化。 */
+function collectSectionValues(section: TabKey): Record<string, any> {
+  const values: Record<string, any> = {}
+  for (const f of SECTION_FIELDS[section]) {
+    if (f === 'inputSchemaJson') {
+      values[f] = parseJsonOrNull(inputSchemaText.value)
+    } else if (f === 'imageConfigJson') {
+      values[f] = parseJsonOrNull(imageConfigText.value)
+    } else if (f === 'voiceConfigJson') {
+      values[f] = parseJsonOrNull(voiceConfigText.value)
+    } else {
+      values[f] = (draft.value as any)[f]
+    }
+  }
+  return values
+}
+
+function parseJsonOrNull(s: string): any {
+  if (!s || !s.trim()) return null
+  try {
+    return JSON.parse(s)
+  } catch {
+    // 解析不了就把原始文本送过去,让 LLM 看出格式问题
+    return s
+  }
+}
+
+function openOptimize(section: TabKey) {
+  if (isNew.value) {
+    errorMsg.value = 'AI 优化需要先创建预设。请先点"创建"再使用。'
+    return
+  }
+  optimizeSection.value = section
+}
+
+function applyOptimize(fields: Record<string, any>) {
+  // 写回 draft + 三个 JSON textarea 的镜像。
+  for (const [k, v] of Object.entries(fields)) {
+    if (k === 'inputSchemaJson') {
+      inputSchemaText.value = v == null ? '' : JSON.stringify(v, null, 2)
+    } else if (k === 'imageConfigJson') {
+      imageConfigText.value = v == null ? '' : JSON.stringify(v, null, 2)
+    } else if (k === 'voiceConfigJson') {
+      voiceConfigText.value = v == null ? '' : JSON.stringify(v, null, 2)
+    } else {
+      ;(draft.value as any)[k] = v
+    }
+  }
+  successMsg.value = 'AI 已写回编辑器,请检查并保存。'
+  errorMsg.value = null
+}
+
+const optimizeCurrentValues = computed(() =>
+  optimizeSection.value ? collectSectionValues(optimizeSection.value) : {},
+)
+const optimizeSectionLabel = computed(() =>
+  optimizeSection.value ? tabLabel(optimizeSection.value) : '',
+)
 </script>
 
 <template>
@@ -245,7 +326,7 @@ async function toggleVersions() {
         </div>
       </div>
 
-      <div class="px-8 max-w-[1400px] mx-auto flex gap-1 overflow-x-auto">
+      <div class="px-8 max-w-[1400px] mx-auto flex items-center gap-1 overflow-x-auto">
         <button
           v-for="t in tabs"
           :key="t.key"
@@ -255,6 +336,16 @@ async function toggleVersions() {
             : 'border-transparent text-text-muted hover:text-text-primary'"
           @click="activeTab = t.key"
         >{{ t.label }}</button>
+        <div class="ml-auto pl-3 py-1.5">
+          <button
+            v-if="adminMode && !isNew"
+            class="chip bg-accent-soft text-accent hover:bg-accent/20 text-xs px-2.5 py-1"
+            :title="`让 LLM 根据你的反馈重新生成【${tabLabel(activeTab)}】配置`"
+            @click="openOptimize(activeTab)"
+          >
+            <Sparkles :size="12" /> AI 优化【{{ tabLabel(activeTab) }}】
+          </button>
+        </div>
       </div>
     </div>
 
@@ -453,6 +544,16 @@ async function toggleVersions() {
         <button v-if="adminMode" class="btn mt-2 text-xs" @click="onRollback(v.version)">回滚到此版</button>
       </div>
     </div>
+
+    <!-- AI 沟通优化对话框 -->
+    <PresetOptimizeDialog
+      :preset-id="props.id"
+      :section="optimizeSection"
+      :section-label="optimizeSectionLabel"
+      :current-values="optimizeCurrentValues"
+      @close="optimizeSection = null"
+      @applied="applyOptimize"
+    />
   </div>
 </template>
 

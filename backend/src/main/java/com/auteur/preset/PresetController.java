@@ -19,6 +19,7 @@ import java.util.List;
  *   DELETE /api/presets/{id}             删除(级联删 version + asset)
  *   GET    /api/presets/{id}/versions    历史版本列表
  *   GET    /api/presets/{id}/assets      关联资源列表
+ *   POST   /api/presets/{id}/optimize    "沟通优化":LLM 根据用户反馈重新生成某 section 字段(不落库)
  *
  * 可见性靠"软"协议:浏览器请求带 X-Auteur-Admin: 1 时返回私有 + 公开;否则只返公开。
  * 这不是真鉴权,只是 UI 层隔离 — 与"无部署/不上公网"威胁模型自洽(见 PRESET_REFACTOR_PLAN.md §〇)。
@@ -30,6 +31,7 @@ import java.util.List;
 public class PresetController {
 
     private final PresetService presetService;
+    private final PresetOptimizeService presetOptimizeService;
 
     @GetMapping
     public List<Preset> list(
@@ -87,5 +89,17 @@ public class PresetController {
     @GetMapping("/{id}/assets")
     public List<PresetAsset> assets(@PathVariable Long id) {
         return presetService.listAssets(id);
+    }
+
+    /**
+     * "沟通优化"端点:用户在编辑器某一节描述对当前配置的不满,LLM 返回该节字段的重新生成结果。
+     * 不落库,仅返回新值,前端写回 draft,让用户决定是否保存。
+     */
+    @PostMapping("/{id}/optimize")
+    public PresetOptimizeService.OptimizeResponse optimize(
+            @PathVariable Long id,
+            @RequestBody PresetOptimizeService.OptimizeRequest req
+    ) {
+        return presetOptimizeService.optimize(id, req);
     }
 }

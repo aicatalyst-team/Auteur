@@ -110,3 +110,30 @@ export async function listPresetAssets(id: number): Promise<PresetAsset[]> {
   const { data } = await http.get<PresetAsset[]>(`/presets/${id}/assets`)
   return data
 }
+
+/**
+ * 沟通优化:用户在某 tab 描述对当前配置的不满,LLM 重新生成该 section 涉及的字段。
+ * 不落库,前端拿到结果再决定是否写回 draft。LLM 调用慢,timeout 拉到 120s。
+ */
+export interface PresetOptimizeRequest {
+  section: string
+  userFeedback: string
+  /** 用户在编辑器中尚未保存的草稿字段值,缺则后端读 DB 当前值。 */
+  currentValues?: Record<string, any>
+}
+
+export interface PresetOptimizeResponse {
+  section: string
+  fields: Record<string, any>
+  explanation?: string | null
+}
+
+export async function optimizePreset(
+  id: number,
+  req: PresetOptimizeRequest,
+): Promise<PresetOptimizeResponse> {
+  const { data } = await http.post<PresetOptimizeResponse>(`/presets/${id}/optimize`, req, {
+    timeout: 120_000,
+  })
+  return data
+}
