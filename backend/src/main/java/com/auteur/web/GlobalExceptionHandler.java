@@ -7,8 +7,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -52,6 +54,36 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ClientAbortException.class)
     public void clientAbort(ClientAbortException e) {
         log.debug("client aborted connection: {}", e.getMessage());
+    }
+
+    /**
+     * SSE / async 请求里:用户切页/刷新/调 cancel 端点 → fetch abort → socket 已断,
+     * 但 Spring 在 dispatch 阶段才发现并抛 AsyncRequestNotUsableException。这是正常取消路径,
+     * 不算错误。如果 generic() 接住会再一次因 Content-Type=text/event-stream 没 converter 二次报错。
+     * 跟 ClientAbortException 同处理:debug 日志静默吞掉。
+     */
+    @ExceptionHandler(AsyncRequestNotUsableException.class)
+    public void asyncNotUsable(AsyncRequestNotUsableException e) {
+        log.debug("async response no longer usable (client likely disconnected): {}", e.getMessage());
+    }
+
+    /**
+     * 客户端断开时除了 AsyncRequestNotUsableException,Spring 还可能直接冒泡 java.io.IOException(Broken pipe / Connection reset)
+     * 走 servlet 异常处理链。这种是网络层正常的"对端关闭",不是真错误,静默。
+     * 注意:只静默"客户端断"模式;别的真 IO 错误(磁盘读失败之类)按字面 message 不会匹配,会 fallthrough 给 generic()。
+     */
+    @ExceptionHandler(IOException.class)
+    public ResponseEntity<Map<String, Object>> ioException(IOException e) {
+        String msg = e.getMessage() == null ? "" : e.getMessage();
+        if (msg.contains("Broken pipe") || msg.contains("Connection reset")
+                || msg.contains("aborted") || msg.contains("已中止")) {
+            log.debug("client disconnected (IOException): {}", msg);
+            return null; // 写不回去也不必写;ResponseEntity null 让 Spring 不再尝试 serialize
+        }
+        // 真 IO 错误,500
+        log.error("Unhandled IOException", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("error", "IO_ERROR", "message", msg));
     }
 
     @ExceptionHandler(ResponseStatusException.class)

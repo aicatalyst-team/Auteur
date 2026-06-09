@@ -38,6 +38,8 @@ public class AgentController {
     private final AgentLoopService loopService;
     private final ToolRegistry toolRegistry;
     private final SystemPromptBuilder systemPromptBuilder;
+    private final ApprovalGate approvalGate;
+    private final AgentCancellationRegistry cancellationRegistry;
 
     /**
      * SSE 长连接和 LLM 调用都不能占着 servlet 容器线程,挪到自己的线程池。
@@ -96,8 +98,14 @@ public class AgentController {
     public SseEmitter chat(@PathVariable Long id, @RequestBody ChatRequestBody body) {
         // LLM 调用 30~90s 都可能,emitter 给 5 分钟超时
         SseEmitter emitter = new SseEmitter(5L * 60 * 1000);
-        emitter.onTimeout(() -> log.warn("[Agent] SSE 超时 sessionId={}", id));
-        emitter.onError(e -> log.warn("[Agent] SSE 错误 sessionId={}: {}", id, e.toString()));
+        emitter.onTimeout(() -> {
+            log.warn("[Agent] SSE 超时 sessionId={},触发 cancel", id);
+            cancellationRegistry.cancel(id);
+        });
+        emitter.onError(e -> {
+            log.warn("[Agent] SSE 错误 sessionId={}: {},触发 cancel", id, e.toString());
+            cancellationRegistry.cancel(id);
+        });
 
         try {
             sseExecutor.execute(() -> loopService.turn(id, body == null ? "" : body.getMessage(), emitter));
@@ -113,11 +121,49 @@ public class AgentController {
         return emitter;
     }
 
+    /**
+     * 显式取消正在跑的 turn。前端切会话/卸载/用户主动停止时调。
+     * 幂等:找不到对应 cancelSignal 不报错(可能已结束),返回 ok=false 提示。
+     */
+    @PostMapping("/sessions/{id}/cancel")
+    public Map<String, Object> cancel(@PathVariable Long id) {
+        boolean ok = cancellationRegistry.cancel(id);
+        return Map.of("ok", ok, "sessionId", id, "note", ok ? "已发送取消信号" : "无活跃 turn(可能已结束)");
+    }
+
     @GetMapping("/tools")
     public Map<String, Object> listTools() {
         return Map.of(
                 "tools", toolRegistry.snapshot().keySet(),
                 "definitions", toolRegistry.definitions()
+        );
+    }
+
+    /**
+     * HITL:用户对一个待审批 tool_call 给出决定。
+     * 前端在收到 SSE tool_approval_request 后,弹卡片让用户点"批准/拒绝",点完调本端点。
+     *
+     * 路径里的 {id} 必须与 toolCallId 注册时绑定的 sessionId 匹配,否则视为跨会话注入直接拒绝。
+     */
+    @PostMapping("/sessions/{id}/approve")
+    public Map<String, Object> approveTool(@PathVariable Long id, @RequestBody ApproveRequest body) {
+        ApprovalGate.ResolveOutcome outcome = approvalGate.resolve(
+                body.getToolCallId(), id, body.isApproved(), body.getReason());
+        log.info("[Agent] approve sessionId={} toolCallId={} approved={} outcome={}",
+                id, body.getToolCallId(), body.isApproved(), outcome);
+        boolean ok = outcome == ApprovalGate.ResolveOutcome.OK;
+        String note = switch (outcome) {
+            case OK -> "已送达";
+            case NOT_FOUND -> "未找到对应待审批项(可能已超时/被取消/重复响应)";
+            case SESSION_MISMATCH -> "审批项不属于该会话,已拒绝";
+            case ALREADY_RESOLVED -> "审批已被先一步完成(超时或并发取消),你的决定未生效";
+        };
+        return Map.of(
+                "ok", ok,
+                "toolCallId", body.getToolCallId(),
+                "approved", body.isApproved(),
+                "outcome", outcome.name(),
+                "note", note
         );
     }
 
@@ -129,5 +175,12 @@ public class AgentController {
     @Data
     public static class ChatRequestBody {
         private String message;
+    }
+
+    @Data
+    public static class ApproveRequest {
+        private String toolCallId;
+        private boolean approved;
+        private String reason;
     }
 }

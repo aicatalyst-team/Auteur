@@ -28,12 +28,23 @@ import {
   getSessionMessages,
   deleteSession,
   sendChatStream,
+  approveTool,
+  cancelSession,
 } from '../api/agent'
 import SessionList from '../components/chat/SessionList.vue'
 import MessageList from '../components/chat/MessageList.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
-import ActionPalette from '../components/chat/ActionPalette.vue'
+import ApprovalCard from '../components/chat/ApprovalCard.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
+
+interface ApprovalRequest {
+  id: string
+  name: string
+  argsJson: string
+  risk: 'WRITE' | 'ACTION' | 'READ'
+  timeoutSeconds: number
+  diff?: { fieldName: string; before: string; after: string; summary?: string | null } | null
+}
 
 const sessions = ref<AgentSession[]>([])
 const activeId = ref<number | null>(null)
@@ -41,7 +52,10 @@ const messages = ref<AgentMessage[]>([])
 const busy = ref(false)
 const errorMsg = ref<string | null>(null)
 const scrollEl = ref<HTMLDivElement | null>(null)
-const chatInputRef = ref<InstanceType<typeof ChatInput> | null>(null)
+const pendingApproval = ref<ApprovalRequest | null>(null)
+// 审批提交态:仅给 ApprovalCard 用 — 调 approveTool API 时锁按钮 + 失败时把 decision 清掉允许重试
+const approvalSubmitting = ref(false)
+const approvalError = ref<string | null>(null)
 let abortFn: (() => void) | null = null
 
 /**
@@ -51,10 +65,20 @@ let abortFn: (() => void) | null = null
  * (见 AgentController review 里 onTimeout/onError 的同类问题)。
  */
 function cancelInFlight() {
+  // 后端取消:让正在跑的 turn 立即抽身,不再花 LLM token。
+  // fetch abort 只切断前端读流,后端默认会跑完当前 LLM 调用才退出 — 调 cancel 端点把信号塞进 registry。
+  if (activeId.value != null && (busy.value || pendingApproval.value)) {
+    cancelSession(activeId.value).catch((e) =>
+      console.warn('[chat] cancelSession 失败,可能已结束:', (e as Error).message),
+    )
+  }
   if (abortFn) {
     abortFn()
     abortFn = null
   }
+  pendingApproval.value = null
+  approvalSubmitting.value = false
+  approvalError.value = null
   busy.value = false
 }
 
@@ -204,6 +228,12 @@ function onSseEvent(ev: AgentEventPayload, placeholderId: number, sentSessionId:
       break
     }
     case 'tool_result': {
+      // 工具执行完毕 → 清空待批卡(approval 决定后或 READ 工具直接执行后都走这);连带清提交态
+      if (pendingApproval.value && pendingApproval.value.id === ev.data.id) {
+        pendingApproval.value = null
+        approvalSubmitting.value = false
+        approvalError.value = null
+      }
       messages.value.push({
         id: ev.data.messageId,
         sessionId: sid,
@@ -225,11 +255,37 @@ function onSseEvent(ev: AgentEventPayload, placeholderId: number, sentSessionId:
     case 'tool_call':
       // 占位事件,目前不渲染独立行(等 tool_result 一并入)
       break
+    case 'tool_approval_request':
+      pendingApproval.value = ev.data as ApprovalRequest
+      approvalSubmitting.value = false
+      approvalError.value = null
+      break
     case 'error':
       errorMsg.value = ev.data?.message || '未知错误'
       break
   }
   scrollToBottom()
+}
+
+async function onApprovalDecided(payload: { toolCallId: string; approved: boolean; reason?: string }) {
+  if (!activeId.value) return
+  // 关键:不要乐观清空 pendingApproval — 否则 API 失败时用户连重试入口都没了。
+  // 只切提交态,卡片继续展示;ApprovalCard 看到 submitting=true 自己锁按钮 + 显示"等服务器确认"。
+  // 真正清掉卡片的时机是后端发来对应的 tool_result(成功/REJECTED/CANCELLED 都会触发)。
+  approvalSubmitting.value = true
+  approvalError.value = null
+  try {
+    const resp = await approveTool(activeId.value, payload.toolCallId, payload.approved, payload.reason)
+    if (!resp.ok) {
+      // 服务端反馈"已超时/SESSION 不匹配/已被先一步完成"等 — 决定其实没生效,告诉用户。
+      // 卡片不立刻消失;后端会发对应的 tool_result 事件,届时由 SSE 路径清掉。
+      approvalError.value = resp.note || '审批未生效'
+    }
+  } catch (e) {
+    approvalError.value = '审批响应失败: ' + (e as Error).message
+  } finally {
+    approvalSubmitting.value = false
+  }
 }
 
 async function onSseDone(sentSessionId: number) {
@@ -257,10 +313,6 @@ async function scrollToBottom() {
 }
 
 watch(messages, () => scrollToBottom(), { deep: true })
-
-function onFillPrompt(text: string) {
-  chatInputRef.value?.fillText(text)
-}
 </script>
 
 <template>
@@ -284,8 +336,16 @@ function onFillPrompt(text: string) {
       <div ref="scrollEl" class="flex-1 overflow-y-auto bg-surface-primary">
         <div class="max-w-4xl mx-auto">
           <ErrorBanner v-if="errorMsg" :msg="errorMsg" class="m-4" />
-          <MessageList v-if="messages.length > 0 || busy" :messages="messages" :busy="busy" />
-          <div v-else class="px-8 py-16 text-center text-text-muted">
+          <MessageList v-if="messages.length > 0 || busy" :messages="messages" :busy="busy && !pendingApproval" />
+          <div v-if="pendingApproval" class="px-4 pb-4">
+            <ApprovalCard
+              :request="pendingApproval"
+              :submitting="approvalSubmitting"
+              :submit-error="approvalError"
+              @decided="onApprovalDecided"
+            />
+          </div>
+          <div v-if="messages.length === 0 && !busy && !pendingApproval" class="px-8 py-16 text-center text-text-muted">
             <div class="text-base font-medium text-text-secondary mb-2">开始一个新对话</div>
             <div class="text-sm">
               输入 <code class="px-1 bg-surface-tertiary rounded">ping</code> 验证工具链路,
@@ -295,9 +355,7 @@ function onFillPrompt(text: string) {
         </div>
       </div>
 
-      <ChatInput ref="chatInputRef" :busy="busy" @send="onSend" />
+      <ChatInput :busy="busy" @send="onSend" />
     </div>
-
-    <ActionPalette @fill-prompt="onFillPrompt" />
   </div>
 </template>

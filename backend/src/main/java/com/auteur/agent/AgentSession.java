@@ -33,6 +33,13 @@ public class AgentSession {
     @Column(name = "system_prompt_version", length = 40)
     private String systemPromptVersion;
 
+    /**
+     * 归档标记。1=不在默认会话列表显示。
+     * 当前没有清理逻辑,仅留字段和索引;后续可加 UI 一键归档 + 后台清理脚本。
+     */
+    @Column(nullable = false)
+    private boolean archived = false;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

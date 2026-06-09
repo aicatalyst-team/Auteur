@@ -16,6 +16,15 @@ export interface AgentSession {
   updatedAt: string
 }
 
+/**
+ * 工具消息状态:
+ *   - OK         执行成功
+ *   - ERROR      工具内部异常 / preview 失败 / TOCTOU 冲突
+ *   - REJECTED   用户在审批卡明确拒绝(或 60s 超时按拒绝处理)
+ *   - CANCELLED  会话取消时给孤立 tool_call 补的 placeholder(不是用户拒绝,是整轮被中断)
+ */
+export type ToolStatus = 'OK' | 'ERROR' | 'REJECTED' | 'CANCELLED'
+
 export interface AgentMessage {
   id: number
   sessionId: number
@@ -26,7 +35,7 @@ export interface AgentMessage {
   toolCallId: string | null
   toolName: string | null
   toolArgsJson: string | null
-  toolStatus: 'OK' | 'ERROR' | null
+  toolStatus: ToolStatus | null
   inputTokens: number | null
   outputTokens: number | null
   durationMs: number | null
@@ -57,6 +66,33 @@ export async function listTools(): Promise<{ tools: string[]; definitions: any[]
   return data
 }
 
+/**
+ * HITL:用户对一个待审批 tool_call 给出决定。
+ * 收到 SSE tool_approval_request 后,前端弹卡 → 用户点 → 调本接口。
+ */
+export async function approveTool(
+  sessionId: number,
+  toolCallId: string,
+  approved: boolean,
+  reason?: string,
+): Promise<{ ok: boolean; toolCallId: string; approved: boolean; note: string }> {
+  const { data } = await http.post(`/agent/sessions/${sessionId}/approve`, {
+    toolCallId,
+    approved,
+    reason: reason ?? null,
+  })
+  return data
+}
+
+/**
+ * 显式取消正在跑的 turn。前端切会话/卸载/用户主动停止时调。
+ * 幂等:找不到活跃 turn 不报错。
+ */
+export async function cancelSession(sessionId: number): Promise<{ ok: boolean; sessionId: number; note: string }> {
+  const { data } = await http.post(`/agent/sessions/${sessionId}/cancel`)
+  return data
+}
+
 // ---- SSE 流式聊天 ----
 
 export type AgentEventType =
@@ -64,6 +100,7 @@ export type AgentEventType =
   | 'assistant_chunk'
   | 'assistant_done'
   | 'tool_call'
+  | 'tool_approval_request'
   | 'tool_result'
   | 'done'
   | 'error'

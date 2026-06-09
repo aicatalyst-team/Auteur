@@ -1,6 +1,6 @@
 package com.auteur.agent.tools;
 
-import com.auteur.agent.ToolHandler;
+import com.auteur.agent.WriteToolHandler;
 import com.auteur.agent.ToolRegistry;
 import com.auteur.llm.ChatRequest;
 import com.auteur.runtimeconfig.RuntimeConfig;
@@ -34,7 +34,7 @@ public class AppConfigWriteTools {
         registry.register(new SetAppConfig());
     }
 
-    private class SetAppConfig implements ToolHandler {
+    private class SetAppConfig implements WriteToolHandler {
         @Override
         public ChatRequest.Tool definition() {
             Map<String, Object> schema = Map.of(

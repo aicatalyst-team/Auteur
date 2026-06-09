@@ -1,7 +1,7 @@
 package com.auteur.agent.tools;
 
-import com.auteur.agent.ToolHandler;
 import com.auteur.agent.ToolRegistry;
+import com.auteur.agent.WriteToolHandler;
 import com.auteur.llm.ChatRequest;
 import com.auteur.preset.Preset;
 import com.auteur.preset.PresetService;
@@ -203,7 +203,7 @@ public class PresetWriteTools {
     }
 
     // -------- update_preset_field --------
-    private class UpdatePresetField implements ToolHandler {
+    private class UpdatePresetField implements WriteToolHandler {
         @Override
         public ChatRequest.Tool definition() {
             Map<String, Object> schema = Map.of(
@@ -245,7 +245,7 @@ public class PresetWriteTools {
         }
     }
 
-    private class SavePresetAsNewVersion implements ToolHandler {
+    private class SavePresetAsNewVersion implements WriteToolHandler {
         @Override
         public ChatRequest.Tool definition() {
             Map<String, Object> schema = Map.of(
@@ -295,7 +295,7 @@ public class PresetWriteTools {
         }
     }
 
-    private class RollbackPresetVersion implements ToolHandler {
+    private class RollbackPresetVersion implements WriteToolHandler {
         @Override
         public ChatRequest.Tool definition() {
             Map<String, Object> schema = Map.of(

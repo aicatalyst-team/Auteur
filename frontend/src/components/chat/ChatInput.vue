@@ -59,7 +59,7 @@ watch(text, resize)
       <textarea
         ref="ta"
         v-model="text"
-        :placeholder="placeholder ?? '试着输入:列出所有预设 / 把竖屏故事的 critic 阈值改成 75 / ping'"
+        :placeholder="placeholder ?? ''"
         :disabled="busy"
         rows="1"
         class="flex-1 resize-none bg-surface-primary border border-border-default rounded-md px-3 py-2 text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent disabled:opacity-50"
