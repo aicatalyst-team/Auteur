@@ -13,6 +13,14 @@ const router = createRouter({
       meta: { title: '工作台' },
     },
 
+    // Agent 控制台:对话式管理预设/系统配置(并存,Home 不变)
+    {
+      path: '/chat',
+      name: 'chat',
+      component: () => import('../views/Chat.vue'),
+      meta: { title: 'Agent 控制台' },
+    },
+
     // 选题
     {
       path: '/topics',
@@ -100,25 +108,12 @@ const router = createRouter({
       props: (route) => ({ scriptId: Number(route.params.scriptId) }),
     },
 
-    // 配音字幕 + 多平台分发
+    // 配音字幕
     {
       path: '/voice',
       name: 'voice',
       component: () => import('../views/VoiceStudio.vue'),
       meta: { title: '配音字幕工作台' },
-    },
-    {
-      path: '/distribute',
-      name: 'distribute',
-      component: () => import('../views/DistributeStudio.vue'),
-      meta: { title: '多平台改造工作台' },
-    },
-    {
-      path: '/distribute/platforms/:platform',
-      name: 'platform-detail',
-      component: () => import('../views/PlatformDetail.vue'),
-      meta: { title: '平台详情' },
-      props: (route) => ({ platform: String(route.params.platform) }),
     },
 
     // 复盘组

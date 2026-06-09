@@ -38,6 +38,89 @@ public class LlmClient {
     }
 
     /**
+     * 带 tool 的多轮对话：调用方传完整 messages（含历史） + tool 定义，
+     * 返回 LlmToolResult，包含 assistant 的文本 + 可能的 tool_calls。
+     * 调用方负责执行 tool 并把结果作为新的 tool message 追加到 messages 后重新调用。
+     */
+    public LlmToolResult chatWithTools(LlmCallSpec spec,
+                                       List<ChatRequest.Message> messages,
+                                       List<ChatRequest.Tool> tools) {
+        String model = resolvePrimaryModel(spec);
+        int attempt = 0;
+        while (true) {
+            attempt++;
+            try {
+                return doToolHttpCall(spec, model, messages, tools, attempt);
+            } catch (RuntimeException e) {
+                String errorType = ErrorClassifier.classify(e);
+                RetryPolicy.Decision d = RetryPolicy.decide(errorType, attempt);
+                if (!d.retry()) {
+                    log.warn("[LLM] op={} model={} attempt={} failed ({}), giving up",
+                            spec.getOperation(), model, attempt, errorType);
+                    throw e;
+                }
+                log.warn("[LLM] op={} model={} attempt={} failed ({}), retrying after {}ms",
+                        spec.getOperation(), model, attempt, errorType, d.sleepMs());
+                if (d.sleepMs() > 0) sleepQuietly(d.sleepMs());
+            }
+        }
+    }
+
+    private LlmToolResult doToolHttpCall(LlmCallSpec spec, String model,
+                                         List<ChatRequest.Message> messages,
+                                         List<ChatRequest.Tool> tools, int attempt) {
+        Double temperature = spec.getTemperature() != null ? spec.getTemperature() : 0.3;
+        String provider = providerOf(model);
+
+        ChatRequest req = new ChatRequest();
+        req.setModel(model);
+        if (supportsTemperature(model)) req.setTemperature(temperature);
+        if (spec.getMaxTokens() != null && spec.getMaxTokens() > 0) {
+            req.setMax_tokens(spec.getMaxTokens());
+        }
+        req.setMessages(messages);
+        if (tools != null && !tools.isEmpty()) {
+            req.setTools(tools);
+            req.setTool_choice("auto");
+        }
+
+        log.info("[LLM] op={} model={} attempt={} tools={} msgs={}",
+                spec.getOperation(), model, attempt, tools == null ? 0 : tools.size(), messages.size());
+
+        long t0 = System.currentTimeMillis();
+        ChatResponse resp = llmRestClient.post()
+                .uri("/chat/completions")
+                .body(req)
+                .retrieve()
+                .body(ChatResponse.class);
+        int durationMs = (int) (System.currentTimeMillis() - t0);
+
+        if (resp == null || resp.getChoices() == null || resp.getChoices().isEmpty()) {
+            throw new IllegalStateException("LLM returned empty choices");
+        }
+        ChatResponse.Choice choice = resp.getChoices().get(0);
+        ChatResponse.Message msg = choice.getMessage();
+        Integer inTok = resp.getUsage() == null ? null : resp.getUsage().getPrompt_tokens();
+        Integer outTok = resp.getUsage() == null ? null : resp.getUsage().getCompletion_tokens();
+
+        log.info("[LLM] op={} model={} attempt={} ok ms={} inTok={} outTok={} finish={} toolCalls={}",
+                spec.getOperation(), model, attempt, durationMs, inTok, outTok,
+                choice.getFinish_reason(),
+                msg.getTool_calls() == null ? 0 : msg.getTool_calls().size());
+
+        return LlmToolResult.builder()
+                .content(msg.getContent())
+                .toolCalls(msg.getTool_calls())
+                .finishReason(choice.getFinish_reason())
+                .model(model)
+                .provider(provider)
+                .inputTokens(inTok)
+                .outputTokens(outTok)
+                .durationMs(durationMs)
+                .build();
+    }
+
+    /**
      * 本地 /api/files/image/ 路径无法被外部视觉模型访问，转为 base64 data URI。
      * TOS 图片已是 https URL，直接透传；旧本地路径兜底转 base64（历史数据）。
      */

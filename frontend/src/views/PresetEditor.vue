@@ -229,6 +229,23 @@ function tabLabel(k: TabKey): string {
   return tabs.find((t) => t.key === k)?.label ?? k
 }
 
+const TAB_HINTS: Record<TabKey, string> = {
+  basic: '预设元信息(显示名/描述/可见性)',
+  input: '创建 topic 时的表单字段(JSON Schema)',
+  brainstorm: '选题阶段的 LLM Prompt(YAML)',
+  script: '编剧阶段的 LLM Prompt(YAML,必填)',
+  critic: '脚本自审 Prompt + 阈值',
+  storyboard: '分镜 Prompt(YAML)+ 模式',
+  image: '图像生成模型/风格/锁脸配置(JSON)',
+  voice: '语音合成 voice/速率/音量(JSON)',
+  bgm: 'BGM 选曲开关 + mood 推荐 Prompt',
+  composition: 'Remotion composition / 分辨率 / 水印 / hook 段',
+}
+
+function tabHint(k: TabKey): string {
+  return TAB_HINTS[k] ?? ''
+}
+
 /** 收集当前 section 在编辑器里的草稿值,JSON tab 用 textarea 文本反序列化。 */
 function collectSectionValues(section: TabKey): Record<string, any> {
   const values: Record<string, any> = {}
@@ -336,16 +353,6 @@ const optimizeSectionLabel = computed(() =>
             : 'border-transparent text-text-muted hover:text-text-primary'"
           @click="activeTab = t.key"
         >{{ t.label }}</button>
-        <div class="ml-auto pl-3 py-1.5">
-          <button
-            v-if="adminMode && !isNew"
-            class="chip bg-accent-soft text-accent hover:bg-accent/20 text-xs px-2.5 py-1"
-            :title="`让 LLM 根据你的反馈重新生成【${tabLabel(activeTab)}】配置`"
-            @click="openOptimize(activeTab)"
-          >
-            <Sparkles :size="12" /> AI 优化【{{ tabLabel(activeTab) }}】
-          </button>
-        </div>
       </div>
     </div>
 
@@ -357,6 +364,33 @@ const optimizeSectionLabel = computed(() =>
 
       <div v-if="loading" class="card p-3 mb-4 flex items-center gap-2 text-xs text-text-muted">
         <Loader2 :size="14" class="animate-spin" /> 加载中…
+      </div>
+
+      <!-- 当前 tab 的标题栏 + AI 优化按钮(显眼位置) -->
+      <div v-if="!loading" class="flex items-center gap-3 mb-3">
+        <h2 class="text-base font-semibold text-text-primary">
+          {{ tabLabel(activeTab) }}
+        </h2>
+        <span class="text-xs text-text-muted">
+          {{ tabHint(activeTab) }}
+        </span>
+        <button
+          v-if="adminMode && !isNew"
+          class="ml-auto inline-flex items-center gap-1.5 px-3.5 py-2 rounded-md text-sm font-medium
+                 bg-accent text-white hover:bg-accent-hover shadow-sm hover:shadow transition-all
+                 ring-1 ring-accent/40"
+          :title="`让 LLM 根据你的反馈重新生成【${tabLabel(activeTab)}】配置`"
+          @click="openOptimize(activeTab)"
+        >
+          <Sparkles :size="15" />
+          <span>AI 优化此节</span>
+        </button>
+        <span
+          v-else-if="isNew"
+          class="ml-auto text-xs text-text-muted italic"
+        >
+          先创建预设后可使用 AI 优化
+        </span>
       </div>
 
       <!-- ========== 基本信息 ========== -->

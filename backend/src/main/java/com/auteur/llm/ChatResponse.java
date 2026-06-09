@@ -25,6 +25,8 @@ public class ChatResponse {
     public static class Message {
         private String role;
         private String content;
+        /** assistant 决定调用工具时由后端网关回填。 */
+        private List<ChatRequest.ToolCall> tool_calls;
     }
 
     @Data
