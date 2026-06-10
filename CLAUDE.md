@@ -134,6 +134,7 @@ CI 会跑这三个 + Maven package。**TS 严格模式启用了 `noUnusedLocals`
 
 ## 容易踩的坑
 
+- **改 `.gitignore` 必须用前导 `/` 锚定到 git 根**。git 的目录模式会**递归匹配所有层级**——`storage/` 不光会忽略 `backend/storage/`（产物目录），还会一并忽略 `backend/src/main/java/com/auteur/storage/`（业务包）；同理 `test/` 会误伤 `backend/src/test/`（Maven 标准测试目录）。**正确写法是 `/storage/` `/test/`，只匹配 git 根下的同名目录**。注意 `.dockerignore` 语义不同（用 Go `filepath.Match` 不递归），所以同样的 `storage/` 在 dockerignore 里就没问题——这种语义差异曾让本地 docker build 通过、CI 编译挂掉。改完 `.gitignore` 用 `git check-ignore -v <file>` 抽查关键源码目录验证。
 - **alpine wget 解析 localhost 优先 IPv6**，但 nginx 默认只监听 IPv4 → healthcheck 永远失败。在 alpine 容器里用 `127.0.0.1` 不要用 `localhost`。
 - **Spring Boot `ddl-auto: validate` 严格校验 entity ↔ schema**——加字段忘 migration 会启动失败。
 - **mvn 镜像在国内**，docker build 第一次需要让 mvn 走国内 mirror（可在 backend Dockerfile 加 `~/.m2/settings.xml`）或者已经在 maven 中央仓 + Docker Hub 国内 mirror（`~/.docker/daemon.json`）。
