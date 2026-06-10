@@ -1,0 +1,12 @@
+# GitHub Sponsors / Open Collective 等赞助入口
+#
+# 取消注释你想用的渠道。完全可以全部留空,留这文件占位也无妨——
+# 仓库主页右上角会出现 ❤️ Sponsor 按钮,点击进入你设置的赞助页面。
+#
+# 个人项目最简方式:开 GitHub Sponsors(免费,需要去 https://github.com/sponsors 注册)。
+# github: nxin-github
+
+# 国内开发者也可以用爱发电(暂不被 GitHub 自动识别,需要写 custom):
+# custom: ['https://afdian.net/a/<your-handle>']
+
+# 完整选项参考: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository

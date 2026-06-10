@@ -1,0 +1,84 @@
+name: 🐛 Bug 报告
+description: 报告一个 bug
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈!提交前请先确认:
+        1. 已经搜过现有 issue 没人反馈过
+        2. 不是配置问题(LLM / TTS / TOS key 等)——配置问题用 Discussions
+        3. 用的是最新 main / 最新 release
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象描述
+      description: 一句话总结遇到了什么问题
+      placeholder: 「点了「视频组装」之后,后端返回 500,日志报 NullPointerException」
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      placeholder: 「应该开始渲染并返回 runId」
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 起服务 docker compose up -d
+        2. 进入 http://localhost:5174
+        3. 选题池 → AI 头脑风暴 → ...
+        4. 点视频组装 → ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 后端日志(脱敏)
+      description: docker compose logs --tail=200 backend,贴关键片段。**记得抹掉 LLM key / TOS access-key 等敏感信息**
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: 部署方式
+      options:
+        - Docker Compose
+        - 本地开发(mvn + npm)
+        - 自定义部署
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: 环境信息
+      description: OS / JDK / Node / Docker 版本
+      placeholder: macOS 15.0 / JDK 21 / Node 20.18 / Docker 29.5
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: commit / version
+      placeholder: 「v0.1.0」或「commit abc1234」
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其他信息
+      description: 截图、相关 issue、你已经尝试的修复等
