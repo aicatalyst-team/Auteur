@@ -13,8 +13,11 @@ import java.nio.charset.StandardCharsets;
 /**
  * Agent system prompt 加载器。
  *
- * 文件位于 classpath:agent/system_prompt.md;读取一次缓存到内存。
- * 后续可在文件头加 "version: vN" 行用于回放老会话兼容性,目前先返回硬编码 "v1"。
+ * 拼接两部分:
+ *   1. classpath:agent/system_prompt.md — 通用规则、角色、工具速查
+ *   2. SkillRegistry.buildCatalog() — 任务剧本目录(每个 skill 一行 name+summary,按需 read_skill 读全文)
+ *
+ * 第二部分让 system prompt 不会被 4 个 skill 全文塞满几千 token,只放目录。
  */
 @Slf4j
 @Component
@@ -22,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 public class SystemPromptBuilder {
 
     private final ResourceLoader resourceLoader;
+    private final SkillRegistry skillRegistry;
 
     @Value("classpath:agent/system_prompt.md")
     private Resource promptResource;
@@ -30,14 +34,18 @@ public class SystemPromptBuilder {
 
     public synchronized String build() {
         if (cached != null) return cached;
+        String basePrompt;
         try {
             byte[] bytes = promptResource.getInputStream().readAllBytes();
-            cached = new String(bytes, StandardCharsets.UTF_8);
-            log.info("[Agent] system prompt 已加载,长度={}", cached.length());
+            basePrompt = new String(bytes, StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.warn("[Agent] 加载 system prompt 失败,使用兜底文本: {}", e.toString());
-            cached = "你是 Auteur 的运营助手。请使用注册的工具协助用户管理预设、提示词和系统配置。";
+            basePrompt = "你是 Auteur 的运营助手。请使用注册的工具协助用户管理预设、提示词和系统配置。";
         }
+        String catalog = skillRegistry.buildCatalog();
+        cached = catalog.isEmpty() ? basePrompt : (basePrompt + "\n\n" + catalog);
+        log.info("[Agent] system prompt 已加载,长度={} (含 skill 目录 {} 字)",
+                cached.length(), catalog.length());
         return cached;
     }
 

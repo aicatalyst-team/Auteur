@@ -81,10 +81,11 @@ public class Java2DCoverRenderer {
 
             String tpl = req.templateId() != null ? req.templateId() : "bottom-caption";
             switch (tpl) {
-                case "split-vertical" -> renderSplitVertical(g, req, hero);
-                case "diagonal"       -> renderDiagonal(g, req, hero);
-                case "minimal"        -> renderMinimal(g, req, hero);
-                default               -> renderBottomCaption(g, req, hero);
+                case "split-vertical"   -> renderSplitVertical(g, req, hero);
+                case "diagonal"         -> renderDiagonal(g, req, hero);
+                case "minimal"          -> renderMinimal(g, req, hero);
+                case "lifecopy-classic" -> renderLifecopyClassic(g, req, hero);
+                default                 -> renderBottomCaption(g, req, hero);
             }
         } finally {
             g.dispose();
@@ -294,6 +295,125 @@ public class Java2DCoverRenderer {
 
         int cornerH = (int) Math.round(h * 0.05);
         drawLogoAndAuthor(g, (int) (w * 0.06), h - cornerH - (int) (h * 0.06), cornerH, brand, primary);
+    }
+
+    // ===================== 模板 5: lifecopy-classic =====================
+    // 录取通知书风格:黑底外框 + 红底圆角 hero(保留 hero 原色)+ 底部主副标题
+    // 标题 titleText 含 \n 时拆主副:小字主标题 + 大字副标题;无换行时整段当大字主标题
+    private void renderLifecopyClassic(Graphics2D g, RenderRequest req, BufferedImage hero) {
+        int w = req.width(), h = req.height();
+
+        // 整体黑色外背景(写实质感)
+        g.setColor(new Color(0x1a, 0x1a, 0x1a));
+        g.fillRect(0, 0, w, h);
+
+        // 红色圆角 hero 框,占上 70% 高度
+        int padX = (int) (w * 0.04);
+        int heroY = (int) (h * 0.04);
+        int heroW = w - padX * 2;
+        int heroH = (int) (h * 0.66);
+        double radius = Math.min(heroW, heroH) * 0.04;
+
+        // 红底(hero 没图时兜底成红框;有 hero 图时被覆盖,不再叠加染色)
+        Shape oldClip = g.getClip();
+        Shape heroClip = new RoundRectangle2D.Double(padX, heroY, heroW, heroH, radius * 2, radius * 2);
+        g.setColor(new Color(0x8B, 0x1A, 0x1A));
+        g.fill(heroClip);
+        g.setClip(heroClip);
+        if (hero != null) drawCover(g, hero, padX, heroY, heroW, heroH);
+        g.setClip(oldClip);
+
+        // 标题区:占下 24%,主副两行黄底黑描边
+        int titleAreaY = heroY + heroH + (int) (h * 0.04);
+        int titleAreaH = h - titleAreaY - (int) (h * 0.04);
+        int titleMaxW = (int) (w * 0.92);
+        double ratio = (double) w / h;
+
+        // 拆主副:titleText 含 \n 时,第一行小字主标题,第二行大字副标题
+        String rawTitle = nz(req.titleText(), "今天体验的人生:示例");
+        String[] parts = rawTitle.split("\\n");
+        String main = null;
+        String sub;
+        if (parts.length >= 2) {
+            main = parts[0].trim();
+            // 第二行及之后合并成 sub
+            StringBuilder sb = new StringBuilder();
+            for (int i = 1; i < parts.length; i++) {
+                if (i > 1) sb.append(' ');
+                sb.append(parts[i].trim());
+            }
+            sub = sb.toString();
+        } else {
+            sub = parts[0].trim();
+        }
+
+        int subSize = ratio < 1 ? (int) Math.round(w * 0.105) : (int) Math.round(h * 0.13);
+        int mainSize = (int) Math.round(subSize * 0.6);
+        int lineGap = (int) (subSize * 0.18);
+
+        int totalH = subSize;
+        if (main != null && !main.isBlank()) totalH += mainSize + lineGap;
+
+        int yCursor = titleAreaY + (titleAreaH - totalH) / 2;
+
+        if (main != null && !main.isBlank()) {
+            yCursor += mainSize;
+            g.setFont(pickBoldFont(mainSize));
+            // 主标题:白色无描边(深色背景下已足够清晰,不抢副标题视觉重心)
+            drawWhitePlain(g, main, w / 2f, yCursor, mainSize, titleMaxW);
+            yCursor += lineGap;
+        }
+        yCursor += subSize;
+        g.setFont(pickBoldFont(subSize));
+        drawStrokedYellow(g, sub, w / 2f, yCursor, subSize, titleMaxW);
+    }
+
+    /** 大字主体:黑色描边 + 黄色填充。GlyphVector 取轮廓,跟 canvas strokeText/fillText 视觉一致。 */
+    private void drawStrokedYellow(Graphics2D g, String text, float cx, float baselineY,
+                                   int fontSize, int maxW) {
+        if (text == null || text.isBlank()) return;
+        FontMetrics fm = g.getFontMetrics();
+
+        String line = text;
+        if (fm.stringWidth(line) > maxW) {
+            while (line.length() > 1 && fm.stringWidth(line + "…") > maxW) {
+                line = line.substring(0, line.length() - 1);
+            }
+            line = line + "…";
+        }
+        int textW = fm.stringWidth(line);
+        float lineX = cx - textW / 2f;
+
+        float strokeWidth = (float) Math.max(4, fontSize * 0.08);
+        java.awt.Stroke oldStroke = g.getStroke();
+        g.setStroke(new java.awt.BasicStroke(strokeWidth,
+                java.awt.BasicStroke.CAP_ROUND, java.awt.BasicStroke.JOIN_ROUND));
+
+        java.awt.font.GlyphVector gv = g.getFont().createGlyphVector(g.getFontRenderContext(), line);
+        Shape outline = gv.getOutline(lineX, baselineY);
+        g.setColor(Color.BLACK);
+        g.draw(outline);
+        g.setColor(new Color(0xFF, 0xD9, 0x3D));
+        g.fill(outline);
+
+        g.setStroke(oldStroke);
+    }
+
+    /** 小字主标题:纯白填充。标题区是深色底,不需要描边。 */
+    private void drawWhitePlain(Graphics2D g, String text, float cx, float baselineY,
+                                int fontSize, int maxW) {
+        if (text == null || text.isBlank()) return;
+        FontMetrics fm = g.getFontMetrics();
+        String line = text;
+        if (fm.stringWidth(line) > maxW) {
+            while (line.length() > 1 && fm.stringWidth(line + "…") > maxW) {
+                line = line.substring(0, line.length() - 1);
+            }
+            line = line + "…";
+        }
+        int textW = fm.stringWidth(line);
+        g.setColor(Color.WHITE);
+        g.drawString(line, cx - textW / 2f, baselineY);
     }
 
     // ===================== 工具 =====================

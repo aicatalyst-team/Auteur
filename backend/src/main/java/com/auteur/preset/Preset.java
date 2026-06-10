@@ -1,6 +1,7 @@
 package com.auteur.preset;
 
 import com.fasterxml.jackson.annotation.JsonRawValue;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
@@ -51,6 +52,7 @@ public class Preset {
     private String ownerName;
 
     @JsonRawValue
+    @JsonDeserialize(using = JsonRawStringDeserializer.class)
     @Column(name = "input_schema_json", columnDefinition = "TEXT")
     private String inputSchemaJson;
 
@@ -80,10 +82,12 @@ public class Preset {
     private String bgmMoodPromptYaml;
 
     @JsonRawValue
+    @JsonDeserialize(using = JsonRawStringDeserializer.class)
     @Column(name = "image_config_json", columnDefinition = "TEXT")
     private String imageConfigJson;
 
     @JsonRawValue
+    @JsonDeserialize(using = JsonRawStringDeserializer.class)
     @Column(name = "voice_config_json", columnDefinition = "TEXT")
     private String voiceConfigJson;
 

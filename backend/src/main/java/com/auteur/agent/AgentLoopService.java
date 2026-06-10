@@ -483,7 +483,7 @@ public class AgentLoopService {
         payload.put("name", toolName == null ? "" : toolName);
         payload.put("argsJson", argsJson == null ? "" : argsJson);
         payload.put("risk", risk.name());
-        payload.put("timeoutSeconds", 60);
+        payload.put("timeoutSeconds", 300);
         if (preview != null) {
             Map<String, Object> diff = new LinkedHashMap<>();
             diff.put("fieldName", preview.fieldName());

@@ -358,6 +358,115 @@ const renderMinimal: CoverRenderFn = (ctx, w, h, brand, design, heroImg, logoImg
   drawLogoAndAuthor(ctx, w * 0.06, h - cornerH - h * 0.06, cornerH, brand, logoImg, brand.primaryColor)
 }
 
+// 模板 5:lifecopy-classic —— 录取通知书风格,红底圆角 hero(保留 hero 原色) + 底部主副标题
+// 标题用 "\n" 分隔主副:第一行小字提示语,第二行大字主标题。无换行时整段当大字主标题。
+// 参考"今天体验的人生"系列爆款封面
+const renderLifecopyClassic: CoverRenderFn = (ctx, w, h, brand, design, heroImg, logoImg) => {
+  // 整体黑色外背景(写实质感)
+  ctx.fillStyle = '#1a1a1a'
+  ctx.fillRect(0, 0, w, h)
+
+  // 红色圆角 hero 框,占上 70% 高度
+  const padX = w * 0.04
+  const heroY = h * 0.04
+  const heroW = w - padX * 2
+  const heroH = h * 0.66
+  const radius = Math.min(heroW, heroH) * 0.04
+
+  // 红底(hero 没图时兜底成红框,与录取通知书喜感一致;有 hero 图时被覆盖,不染色)
+  ctx.save()
+  roundedRectPath(ctx, padX, heroY, heroW, heroH, radius)
+  ctx.fillStyle = '#8B1A1A'
+  ctx.fill()
+  ctx.clip()
+  if (heroImg) drawCover(ctx, heroImg, padX, heroY, heroW, heroH)
+  ctx.restore()
+
+  // 标题区:占下 24%,主副两行黄底黑描边
+  const titleAreaY = heroY + heroH + h * 0.04
+  const titleAreaH = h - titleAreaY - h * 0.04
+
+  // 拆主副:design.titleText 含 \n 时,第一行小字主标题,第二行大字副标题
+  const rawTitle = design.titleText || '今天体验的人生:示例'
+  const lines = rawTitle.split('\n').map((s) => s.trim()).filter(Boolean)
+  const main = lines.length >= 2 ? lines[0] : null
+  const sub = lines.length >= 2 ? lines.slice(1).join(' ') : lines[0] || ''
+
+  const titleMaxW = w * 0.92
+  const ratio = w / h
+  // 大字(副标题/主标题):占 13% 高
+  const subSize = ratio < 1 ? Math.round(w * 0.105) : Math.round(h * 0.13)
+  // 小字(主标题/提示语):占大字的 60%
+  const mainSize = Math.round(subSize * 0.6)
+
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+
+  // 测量布局
+  const lineGap = subSize * 0.18
+  let totalH = subSize
+  if (main) totalH += mainSize + lineGap
+
+  let yCursor = titleAreaY + (titleAreaH - totalH) / 2
+
+  // 第一行:小字主标题(可选) — 白字直接 fill,深色背景下不需要描边
+  if (main) {
+    yCursor += mainSize
+    ctx.font = `bold ${mainSize}px ${brand.titleFont}`
+    drawWhitePlain(ctx, main, w / 2, yCursor, mainSize, titleMaxW)
+    yCursor += lineGap
+  }
+
+  // 第二行(或唯一一行):大字 — 黄色 + 黑描边(保留视觉重心)
+  yCursor += subSize - (main ? 0 : 0)
+  ctx.font = `900 ${subSize}px ${brand.titleFont}`
+  drawStrokedYellow(ctx, sub, w / 2, yCursor, subSize, titleMaxW)
+}
+
+// 大字主标题:黄色填充 + 黑色粗描边(WordArt 风,平台压缩仍醒目)
+function drawStrokedYellow(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number, y: number,
+  fontSize: number,
+  maxW: number,
+) {
+  if (!text) return
+  let line = text
+  while (ctx.measureText(line).width > maxW && line.length > 1) {
+    line = line.slice(0, -1)
+  }
+  if (line !== text) line = line.slice(0, -1) + '…'
+
+  const strokeWidth = Math.max(4, fontSize * 0.08)
+  ctx.strokeStyle = '#000000'
+  ctx.lineWidth = strokeWidth
+  ctx.lineJoin = 'round'
+  ctx.miterLimit = 2
+  ctx.strokeText(line, cx, y)
+  ctx.fillStyle = '#FFD93D'
+  ctx.fillText(line, cx, y)
+}
+
+// 小字主标题:纯白填充,标题区是 #1a1a1a 深底,白字本身已经够醒目
+function drawWhitePlain(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number, y: number,
+  fontSize: number,
+  maxW: number,
+) {
+  if (!text) return
+  let line = text
+  while (ctx.measureText(line).width > maxW && line.length > 1) {
+    line = line.slice(0, -1)
+  }
+  if (line !== text) line = line.slice(0, -1) + '…'
+  ctx.fillStyle = '#FFFFFF'
+  ctx.fillText(line, cx, y)
+}
+
+
 function roundedRectPath(
   ctx: CanvasRenderingContext2D,
   x: number, y: number, w: number, h: number, r: number,
@@ -410,6 +519,12 @@ export const COVER_TEMPLATES: CoverTemplateMeta[] = [
     name: '极简标题',
     description: '居中大字标题,hero 缩成右下角圆角小图。文字优先,B站知识区风格。',
     render: renderMinimal,
+  },
+  {
+    id: 'lifecopy-classic',
+    name: '录取通知书',
+    description: '红色圆角 hero + 底部黄底黑描边大字加粗标题。"今天体验的人生"系列爆款打法,适合 lifecopy 漫画风。',
+    render: renderLifecopyClassic,
   },
 ]
 

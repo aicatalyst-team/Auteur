@@ -36,6 +36,7 @@ import MessageList from '../components/chat/MessageList.vue'
 import ChatInput from '../components/chat/ChatInput.vue'
 import ApprovalCard from '../components/chat/ApprovalCard.vue'
 import ErrorBanner from '../components/ErrorBanner.vue'
+import { useRunWatcher } from '../composables/useRunWatcher'
 
 interface ApprovalRequest {
   id: string
@@ -57,6 +58,11 @@ const pendingApproval = ref<ApprovalRequest | null>(null)
 const approvalSubmitting = ref(false)
 const approvalError = ref<string | null>(null)
 let abortFn: (() => void) | null = null
+
+// RunWatcher:ACTION 工具产生的 runId 后台轮询,完成时自动塞系统消息触发新一轮 chat
+const runWatcher = useRunWatcher()
+// busy 期间收到的完成通知排队,等 busy=false 再依次发出 — 避免 race(server 拒绝并发 chat)
+const pendingNotifications = ref<string[]>([])
 
 /**
  * 取消正在进行的 SSE 流。在切会话/删会话/卸载组件/出错时调用,避免后端 LLM 调用孤立运行。
@@ -83,6 +89,20 @@ function cancelInFlight() {
 }
 
 onMounted(async () => {
+  // 注册 RunWatcher 完成回调:状态变 DONE/FAILED 时把通知排队,空闲时发出去触发新一轮 chat
+  runWatcher.onComplete((runId, run, ctx) => {
+    // 跨会话保护:回调时 activeId 可能已切走,通知只发给当时触发的 session
+    if (ctx.sessionId !== activeId.value) {
+      console.info(`[Chat] runId=${runId} 完成但 session 已切走,丢弃通知`)
+      return
+    }
+    const verb = run.status === 'DONE' ? '已完成' : run.status === 'FAILED' ? '失败' : run.status
+    const errSuffix = run.errorMsg ? ` 错误: ${run.errorMsg}` : ''
+    const msg = `[系统通知] runId=${runId} (${ctx.toolName}) ${verb}。${errSuffix}`
+    pendingNotifications.value.push(msg)
+    flushNotifications()
+  })
+
   try {
     sessions.value = await listSessions()
     if (sessions.value.length > 0) {
@@ -98,6 +118,7 @@ onMounted(async () => {
 // 离开页面时一定要 cancel,否则 fetch 还在监听,后端继续推流量
 onBeforeUnmount(() => {
   cancelInFlight()
+  runWatcher.clearAll()
 })
 
 async function refreshSessions() {
@@ -234,6 +255,17 @@ function onSseEvent(ev: AgentEventPayload, placeholderId: number, sentSessionId:
         approvalSubmitting.value = false
         approvalError.value = null
       }
+      // ACTION 工具的结果常带 runId,把它注册进 RunWatcher 自动监视
+      if (ev.data.status === 'OK' && ev.data.resultJson) {
+        try {
+          const parsed = JSON.parse(ev.data.resultJson)
+          if (parsed && typeof parsed.runId === 'number' && parsed.runId > 0) {
+            runWatcher.watchRun(sid, parsed.runId, ev.data.name)
+          }
+        } catch {
+          // resultJson 不是 JSON / 没 runId,跳过
+        }
+      }
       messages.value.push({
         id: ev.data.messageId,
         sessionId: sid,
@@ -294,6 +326,7 @@ async function onSseDone(sentSessionId: number) {
   // 兜底全量同步,补齐 args/cost 等。但只有当前依然是同一会话时才覆盖,否则会冲掉用户切到的新会话
   if (sentSessionId !== activeId.value) {
     await refreshSessions().catch(() => {})
+    flushNotifications() // 即使切了 session,如果新 session 空闲也可以走通知
     return
   }
   if (activeId.value != null) {
@@ -304,6 +337,26 @@ async function onSseDone(sentSessionId: number) {
       errorMsg.value = (e as Error).message
     }
   }
+  // chat 流彻底结束 → 看看有没有积压的 RunWatcher 通知,有就发一条触发新一轮 chat
+  flushNotifications()
+}
+
+/**
+ * 把队列里的"任务完成通知"作为 user message 发出去触发 agent 新一轮 chat。
+ *
+ * 调用时机:
+ *   1. 从 RunWatcher 回调里(busy=true 时入队等这里)
+ *   2. onSseDone 里(上一轮 chat 结束,可以发下一条了)
+ *
+ * 一次只发一条 — 发出去后 busy=true,后续等下一个 onSseDone 再发。
+ */
+function flushNotifications() {
+  if (busy.value) return
+  if (activeId.value == null) return
+  if (pendingNotifications.value.length === 0) return
+  const msg = pendingNotifications.value.shift()!
+  // 直接调 onSend — 跟用户手动发消息走同一条路径
+  onSend(msg)
 }
 
 async function scrollToBottom() {

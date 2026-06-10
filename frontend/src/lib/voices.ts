@@ -12,13 +12,14 @@ export interface VoiceGroup {
   voices: VoiceOption[]
 }
 
-/** Catalog 兜底默认音色（爽快思思），与后端 VolcanoVoiceCatalog.defaultVoice() 对齐。preset.voice_config 没指定时用。 */
-export const DEFAULT_VOICE = 'zh_female_shuangkuaisisi_emo_v2_mars_bigtts'
+/** Catalog 兜底默认音色（温暖阿虎），与后端 VolcanoVoiceCatalog.defaultVoice() 对齐。preset.voice_config 没指定时用。 */
+export const DEFAULT_VOICE = 'zh_male_wennuanahu_uranus_bigtts'
 
 export const VOICE_GROUPS: VoiceGroup[] = [
   {
     label: '推荐 · 旁白解说',
     voices: [
+      { value: 'zh_male_wennuanahu_uranus_bigtts',     label: '温暖阿虎',  suit: '温暖治愈/亲和叙述/陪伴感(默认)' },
       { value: 'zh_male_xuanyijieshuo_uranus_bigtts', label: '悬疑解说', suit: '神秘/暗黑风/解说' },
       { value: 'zh_male_shenyeboke_uranus_bigtts',    label: '深夜播客', suit: '深沉/沉郁/落魄文人' },
       { value: 'zh_male_cixingjieshuonan_uranus_bigtts', label: '磁性解说男', suit: '磁性/史诗叙述' },

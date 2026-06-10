@@ -53,9 +53,12 @@ const runMsg = ref<string | null>(null)
 const runProgress = ref<{ done: number; total: number }>({ done: 0, total: 3 })
 const generating = ref(false)
 
+// hero 候选:所有有 fileUrl 的 image_asset(不仅限 final)。final 用 isFinal 标记给前端高亮显示。
+// 设计意图:final 是"主推图",但用户经常想从其它候选里挑一张当封面 hero(如有更"动作感"的镜头),
+// 不应该被强制过滤掉。
 const finalImageCandidates = computed(() => {
   return images.value
-    .filter((img) => img.isFinal && img.fileUrl)
+    .filter((img) => img.fileUrl)
     .map((img) => {
       const shot = shots.value.find((s) => s.id === img.shotId)
       return {
@@ -63,9 +66,14 @@ const finalImageCandidates = computed(() => {
         url: img.fileUrl!,
         shotIndex: shot?.shotIndex ?? -1,
         shotType: shot?.shotType ?? null,
+        isFinal: !!img.isFinal,
       }
     })
-    .sort((a, b) => a.shotIndex - b.shotIndex)
+    .sort((a, b) => {
+      // final 排前面,然后按 shotIndex
+      if (a.isFinal !== b.isFinal) return a.isFinal ? -1 : 1
+      return a.shotIndex - b.shotIndex
+    })
 })
 
 // 按 ratio 分组取最新一张 cover_asset
@@ -75,6 +83,38 @@ const coversByRatio = computed<Record<CoverRatio, CoverAsset | null>>(() => {
     if (out[c.ratio] == null) out[c.ratio] = c    // covers 已按 id desc 排,首次遇到即最新
   }
   return out
+})
+
+// 主副标题双向绑定 — 底层 design.titleText 用 "\n" 拼"主\n副"。
+// 模板拆主副(lifecopy-classic)或自然 wrap(其他模板,wrapText 已支持 \n)。
+// 留空主标题 → 单行;留空副标题 → 单行(只显主)
+const mainTitleInput = computed({
+  get: (): string => {
+    const t = design.value?.titleText || ''
+    const lines = t.split('\n')
+    return lines.length >= 2 ? lines[0] : ''
+  },
+  set: (val: string) => {
+    if (!design.value) return
+    const cur = design.value.titleText || ''
+    const lines = cur.split('\n')
+    const sub = lines.length >= 2 ? lines.slice(1).join('\n') : cur
+    design.value.titleText = val.trim() ? `${val.trim()}\n${sub}` : sub
+  },
+})
+const subTitleInput = computed({
+  get: (): string => {
+    const t = design.value?.titleText || ''
+    const lines = t.split('\n')
+    return lines.length >= 2 ? lines.slice(1).join('\n') : t
+  },
+  set: (val: string) => {
+    if (!design.value) return
+    const cur = design.value.titleText || ''
+    const lines = cur.split('\n')
+    const main = lines.length >= 2 ? lines[0] : ''
+    design.value.titleText = main ? `${main}\n${val}` : val
+  },
 })
 
 async function load() {
@@ -262,10 +302,19 @@ onMounted(load)
             <h2 class="text-base font-semibold mb-3">文案</h2>
             <div class="space-y-3 text-sm">
               <div>
-                <div class="text-xs text-text-muted mb-1">主标题</div>
-                <textarea v-model="design.titleText" rows="2"
-                          placeholder="例:雍正暴崩谜案 / 朱元璋的死藏着六百年的秘密"
+                <div class="text-xs text-text-muted mb-1">主标题(小字 · 可空)</div>
+                <input v-model="mainTitleInput"
+                       placeholder="例:今天体验的人生副本(留空只显大字)"
+                       class="w-full bg-surface-tertiary border border-border-subtle rounded px-2 py-1.5" />
+              </div>
+              <div>
+                <div class="text-xs text-text-muted mb-1">副标题(大字主体)</div>
+                <textarea v-model="subTitleInput" rows="2"
+                          placeholder="例:高考超水平发挥的一生 / 朱元璋的死藏着六百年的秘密"
                           class="w-full bg-surface-tertiary border border-border-subtle rounded px-2 py-1.5 resize-y" />
+              </div>
+              <div class="text-[10px] text-text-muted">
+                "录取通知书"模板会把主标题作小字、副标题作大字两行显示;其他模板按 wrap 自然展开。
               </div>
             </div>
           </div>
@@ -303,13 +352,13 @@ onMounted(load)
               <p class="text-xs text-text-muted mt-1">来源:storyboard 关键帧</p>
             </div>
 
-            <div class="text-xs text-text-muted mb-2">从 storyboard 选关键帧(只列 final):</div>
+            <div class="text-xs text-text-muted mb-2">从 storyboard 选任一张已生成图作 hero(★ = 该镜的 final):</div>
             <div v-if="loading" class="py-3 text-center">
               <Loader2 :size="16" class="animate-spin text-text-muted mx-auto" />
             </div>
             <div v-else-if="finalImageCandidates.length === 0" class="text-xs text-text-muted py-3">
-              这条 script 还没有 final 图。先去 <a class="underline cursor-pointer"
-              @click="$router.push(`/images/${scriptId}`)">/images/{{ scriptId }}</a> 把图选定 final。
+              这条 script 还没有任何已生成的图。先去 <a class="underline cursor-pointer"
+              @click="$router.push(`/images/${scriptId}`)">/images/{{ scriptId }}</a> 触发生图。
             </div>
             <div v-else class="grid grid-cols-3 gap-2 max-h-56 overflow-y-auto">
               <button
@@ -324,6 +373,9 @@ onMounted(load)
                 <span class="absolute top-0.5 left-0.5 chip bg-black/60 text-white text-[9px] px-1 py-0">
                   {{ c.shotIndex }}
                 </span>
+                <span v-if="c.isFinal"
+                  class="absolute top-0.5 right-0.5 chip bg-status-done/80 text-white text-[9px] px-1 py-0"
+                  title="该 shot 的 final image">★</span>
               </button>
             </div>
           </div>

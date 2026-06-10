@@ -31,7 +31,7 @@ import java.util.concurrent.TimeUnit;
 public class ApprovalGate {
 
     /** 用户响应超时,超时算拒绝。LLM 可在下一轮自纠正。 */
-    private static final long DECISION_TIMEOUT_SECONDS = 60;
+    private static final long DECISION_TIMEOUT_SECONDS = 300;
 
     private final ConcurrentHashMap<String, Pending> pending = new ConcurrentHashMap<>();
 

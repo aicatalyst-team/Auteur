@@ -2,6 +2,7 @@ package com.auteur.agent.tools;
 
 import com.auteur.agent.ToolHandler;
 import com.auteur.agent.ToolRegistry;
+import com.auteur.agent.WriteToolHandler;
 import com.auteur.brainstorm.BrainstormRequest;
 import com.auteur.brainstorm.BrainstormService;
 import com.auteur.domain.Topic;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +48,7 @@ public class TopicTools {
     public void init() {
         registry.register(new ListTopics());
         registry.register(new GetTopic());
+        registry.register(new CreateTopic());
         registry.register(new BrainstormTopics());
         registry.register(new GenerateScriptFromTopic());
     }
@@ -136,6 +139,141 @@ public class TopicTools {
             m.put("latestScriptId", t.getLatestScriptId());
             m.put("aiSuggestedSeries", t.getAiSuggestedSeries());
             return m;
+        }
+    }
+
+    // ============ create_topic ============
+    /**
+     * 直接插入一条选题(不跑脑暴 LLM)。前端没有这个按钮 — 网页上选题只通过脑暴/hook 兑现产生。
+     * 但 agent 场景下用户经常说"我想做 X 这个选题",每次都跑 brainstorm 太贵。直接落库一条 DRAFT 即可。
+     *
+     * source = 'AGENT_MANUAL',跟 AI_BRAINSTORM / HOOK_FULFILL 区分开,后续数据分析能识别。
+     */
+    private class CreateTopic implements WriteToolHandler {
+        @Override
+        public ChatRequest.Tool definition() {
+            return ChatRequest.Tool.of(
+                    "create_topic",
+                    "直接创建一条选题(不跑脑暴 LLM)。落库 status=DRAFT、source=AGENT_MANUAL。" +
+                            "title 必填;其他字段(dynasty/genre/protagonist/hookType/emotion 等)可空但建议填,影响后续脚本生成。" +
+                            "想要批量候选用 brainstorm_topics 跑 LLM。",
+                    Map.ofEntries(
+                            Map.entry("type", "object"),
+                            Map.entry("properties", Map.ofEntries(
+                                    Map.entry("title", Map.of("type", "string")),
+                                    Map.entry("projectName", Map.of("type", "string", "description", "项目名;不填会从 title 截前 10 字兜底")),
+                                    Map.entry("dynasty", Map.of("type", "string", "description", "朝代/时代背景")),
+                                    Map.entry("genre", Map.of("type", "string", "description", "题材类型")),
+                                    Map.entry("protagonist", Map.of("type", "string", "description", "主角设定")),
+                                    Map.entry("hookType", Map.of("type", "string", "description", "钩子类型")),
+                                    Map.entry("emotion", Map.of("type", "string", "description", "情绪基调")),
+                                    Map.entry("durationMinutes", Map.of("type", "integer", "description", "目标时长分钟数")),
+                                    Map.entry("potentialScore", Map.of("type", "number", "description", "潜力分,空时由后续 recompute 算")),
+                                    Map.entry("historicalReference", Map.of("type", "string", "description", "历史依据/灵感来源")),
+                                    Map.entry("seriesId", Map.of("type", "integer", "description", "归属系列 id,可空")),
+                                    Map.entry("notes", Map.of("type", "string")),
+                                    Map.entry("directorNote", Map.of(
+                                            "description", "导演笔记 — 跨角色共享的叙事/视觉方向。" +
+                                                    "**字段是 MySQL JSON 列**,前端按结构化对象存储 8 个字段(tone/pacing/" +
+                                                    "narrativeArc[A-E]/visualStyle/protagonistVibe/keyMoments/highlightThemes/directorNotes)。" +
+                                                    "强烈建议传完整 JSON 对象 — 详见 read_skill('topic-creation') 里的 schema 模板。" +
+                                                    "若只传纯字符串,工具会自动包装成 {directorNotes:\"<text>\"} — 前端能读但 narrativeArc 等关键段空着,下游 LLM 角色会失参考。"
+                                    )),
+                                    Map.entry("presetId", Map.of("type", "integer",
+                                            "description", "**强烈建议填** — 决定后续脚本/分镜/出图用哪个内容形态。不填后续 generate_script_from_topic 会失败")),
+                                    Map.entry("presetInputJson", Map.of("type", "string",
+                                            "description", "preset 的输入字段 JSON(身份标签卡之类),按 preset.input_schema_json 的结构填"))
+                            )),
+                            Map.entry("required", List.of("title"))
+                    )
+            );
+        }
+
+        @Override
+        public Object execute(JsonNode args) {
+            Topic t = new Topic();
+            String title = args.get("title").asText();
+            t.setTitle(title);
+            // projectName:不传则从 title 截前 10 字
+            if (args.hasNonNull("projectName")) {
+                t.setProjectName(args.get("projectName").asText());
+            } else if (title != null && !title.isBlank()) {
+                t.setProjectName(title.substring(0, Math.min(title.length(), 10)));
+            }
+            if (args.hasNonNull("dynasty")) t.setDynasty(args.get("dynasty").asText());
+            if (args.hasNonNull("genre")) t.setGenre(args.get("genre").asText());
+            if (args.hasNonNull("protagonist")) t.setProtagonist(args.get("protagonist").asText());
+            if (args.hasNonNull("hookType")) t.setHookType(args.get("hookType").asText());
+            if (args.hasNonNull("emotion")) t.setEmotion(args.get("emotion").asText());
+            if (args.hasNonNull("durationMinutes")) t.setDurationMinutes(args.get("durationMinutes").asInt());
+            if (args.hasNonNull("potentialScore")) {
+                t.setPotentialScore(new BigDecimal(args.get("potentialScore").asText()));
+            }
+            if (args.hasNonNull("historicalReference")) t.setHistoricalReference(args.get("historicalReference").asText());
+            if (args.hasNonNull("seriesId")) t.setSeriesId(args.get("seriesId").asLong());
+            if (args.hasNonNull("notes")) t.setNotes(args.get("notes").asText());
+            if (args.hasNonNull("directorNote")) t.setDirectorNote(MoreOpsTools.normalizeDirectorNote(args.get("directorNote")));
+            if (args.hasNonNull("presetId")) t.setPresetId(args.get("presetId").asLong());
+            if (args.hasNonNull("presetInputJson")) {
+                JsonNode v = args.get("presetInputJson");
+                t.setPresetInputJson(v.isTextual() ? v.asText() : v.toString());
+            }
+            t.setStatus(TopicStatus.DRAFT);
+            t.setSource("AGENT_MANUAL");
+
+            Topic saved = topicRepo.save(t);
+            log.info("[Agent] create_topic id={} title={} presetId={}", saved.getId(), saved.getTitle(), saved.getPresetId());
+
+            // 关键字段缺失时主动报警 — 让 LLM 看到 hint 就知道该回头补,而不是把不合格 topic 放走。
+            // 兜底逻辑(projectName 截 title 前 10 字)是"防止 NULL 崩溃",不该当默认行为。
+            List<String> missing = new java.util.ArrayList<>();
+            if (saved.getProtagonist() == null || saved.getProtagonist().isBlank()) missing.add("protagonist");
+            // directorNote: 完全缺 → 报缺;只有 directorNotes 一字段(走了兜底) → 报"结构不全"
+            boolean directorNoteMissing = saved.getDirectorNote() == null || saved.getDirectorNote().isBlank();
+            boolean directorNoteWeak = !directorNoteMissing && MoreOpsTools.isWeakDirectorNote(saved.getDirectorNote());
+            if (directorNoteMissing) missing.add("directorNote");
+            if (saved.getEmotion() == null || saved.getEmotion().isBlank()) missing.add("emotion");
+            // projectName 即便有 — 如果是从 title 截前 10 字兜底来的,标出来
+            boolean projectNameAuto = !args.hasNonNull("projectName")
+                    && saved.getProjectName() != null
+                    && saved.getProjectName().equals(saved.getTitle() == null ? null
+                            : saved.getTitle().substring(0, Math.min(saved.getTitle().length(), 10)));
+
+            StringBuilder hint = new StringBuilder();
+            if (saved.getPresetId() == null) {
+                hint.append("⚠️ 未指定 presetId,后续 generate_script_from_topic 会失败 — 建议先 update_topic 补 presetId。");
+            }
+            if (!missing.isEmpty()) {
+                if (hint.length() > 0) hint.append(" ");
+                hint.append("⚠️ 关键字段为空: ").append(missing)
+                        .append("。下游脚本/分镜会因此漂移,建议立即 update_topic 补全 — 让用户告诉你或基于上下文给出值。");
+            }
+            if (directorNoteWeak) {
+                if (hint.length() > 0) hint.append(" ");
+                hint.append("⚠️ directorNote 结构不全 — 你只填了 directorNotes 一字段(纯文本兜底包装),")
+                        .append("缺 tone/pacing/narrativeArc 等核心结构。下游编剧 LLM 看不到 narrativeArc 5 段指导会自由发挥。")
+                        .append("**立即** read_skill('topic-creation') 看完整 JSON schema,然后 update_topic 把 directorNote 重填成完整对象。")
+                        .append("如果用户描述里有'分几个阶段/几段/几幕'这种结构线索,直接拆进 narrativeArc[A-E] 5 段。");
+            }
+            if (projectNameAuto) {
+                if (hint.length() > 0) hint.append(" ");
+                hint.append("ℹ️ projectName 是从 title 截前 10 字兜底的(=\"")
+                        .append(saved.getProjectName()).append("\"),通常质量差,建议你帮用户起一个有辨识度的 4-10 字短名后 update_topic。");
+            }
+            if (hint.length() == 0) {
+                hint.append("✓ 字段完备。可调 generate_script_from_topic(topicId=").append(saved.getId()).append(") 生成脚本。");
+            }
+
+            return Map.of(
+                    "ok", true,
+                    "id", saved.getId(),
+                    "title", saved.getTitle(),
+                    "status", saved.getStatus(),
+                    "presetId", saved.getPresetId(),
+                    "missingKeyFields", missing,
+                    "directorNoteWeak", directorNoteWeak,
+                    "hint", hint.toString()
+            );
         }
     }
 

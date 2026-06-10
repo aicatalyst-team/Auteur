@@ -18,6 +18,7 @@ public class VolcanoVoiceCatalog {
 
     public static final List<Voice> VOICES = List.of(
             // 男声
+            new Voice("zh_male_wennuanahu_uranus_bigtts",   "温暖阿虎", "温暖治愈/亲和叙述/陪伴感", "male", "both"),
             new Voice("zh_male_xuanyijieshuo_uranus_bigtts", "悬疑解说", "神秘/暗黑风/解说", "male", "mystery"),
             new Voice("zh_male_baqiqingshu_uranus_bigtts",  "霸气青叔",  "霸气/中年权臣/帝王重臣", "male", "biography"),
             new Voice("zh_male_qingcang_uranus_bigtts",     "擎苍",     "古风沧桑/武将/沙场老将", "male", "biography"),
@@ -57,8 +58,8 @@ public class VolcanoVoiceCatalog {
         return VOICES.stream().anyMatch(v -> v.voiceType().equals(voiceType));
     }
 
-    /** catalog 兜底默认音色:爽快思思。preset.voice_config_json.voiceId 没指定时用。 */
+    /** catalog 兜底默认音色:温暖阿虎。preset.voice_config_json.voiceId 没指定时用。 */
     public String defaultVoice() {
-        return "zh_female_shuangkuaisisi_emo_v2_mars_bigtts";
+        return "zh_male_wennuanahu_uranus_bigtts";
     }
 }

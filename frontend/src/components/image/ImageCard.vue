@@ -163,5 +163,3 @@ function onCoverClick() {
     </div>
   </article>
 </template>
-</content>
-</invoke>

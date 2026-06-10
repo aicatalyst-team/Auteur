@@ -205,12 +205,12 @@ public class PipelineTriggerTools {
         public ChatRequest.Tool definition() {
             return ChatRequest.Tool.of(
                     "generate_voice",
-                    "合成旁白音频 + SRT 字幕。voiceModel 必填(如 'zh_female_qingxin');其他可空走默认。",
+                    "合成旁白音频 + SRT 字幕。voiceModel 必填;其他可空走默认。",
                     Map.of(
                             "type", "object",
                             "properties", Map.of(
                                     "scriptId", Map.of("type", "integer"),
-                                    "voiceModel", Map.of("type", "string", "description", "音色 id,如 zh_female_qingxin"),
+                                    "voiceModel", Map.of("type", "string", "description", "音色 id"),
                                     "voiceLabel", Map.of("type", "string"),
                                     "speed", Map.of("type", "number", "description", "语速倍率,默认 1.0"),
                                     "pitch", Map.of("type", "integer"),
