@@ -9,6 +9,7 @@ import com.auteur.domain.Topic;
 import com.auteur.domain.TopicRepository;
 import com.auteur.domain.TopicStatus;
 import com.auteur.script.ScriptService;
+import com.auteur.video.DirectorNoteOptimizeService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ public class TopicController {
     private final ScriptRepository scriptRepository;
     private final ScriptService scriptService;
     private final SeriesHookRepository seriesHookRepository;
+    private final DirectorNoteOptimizeService directorNoteOptimizeService;
 
     @PostMapping("/brainstorm")
     public List<Topic> brainstorm(@Valid @RequestBody BrainstormRequest req) {
@@ -195,5 +197,17 @@ public class TopicController {
     public Map<String, Object> generateScriptAsync(@PathVariable Long id) {
         Long runId = scriptService.generateAsync(id, "API");
         return Map.of("runId", runId);
+    }
+
+    /**
+     * 导演笔记 "AI 智能填充":用户在 DirectorNoteDrawer 里描述对当前笔记的诉求,LLM 综合
+     * 已填内容(可能含未保存草稿)+ 用户诉求重写整份 DirectorNote。不落库,只返回建议。
+     */
+    @PostMapping("/{id}/director-note/optimize")
+    public DirectorNoteOptimizeService.OptimizeResponse optimizeDirectorNote(
+            @PathVariable Long id,
+            @RequestBody DirectorNoteOptimizeService.OptimizeRequest req
+    ) {
+        return directorNoteOptimizeService.optimize(id, req);
     }
 }

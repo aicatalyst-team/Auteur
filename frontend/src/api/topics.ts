@@ -1,5 +1,5 @@
 import { http } from './client'
-import type { SpringPage, Topic, TopicStatus, Script } from '../types'
+import type { DirectorNote, SpringPage, Topic, TopicStatus, Script } from '../types'
 
 export async function listTopics(
   status: TopicStatus = 'DRAFT',
@@ -102,5 +102,31 @@ export async function generateScript(topicId: number): Promise<Script> {
 // 异步路径:立即返回 runId,前端轮询 GET /api/runs/{runId},DONE 后用 run.scriptId 跳详情
 export async function generateScriptAsync(topicId: number): Promise<{ runId: number }> {
   const { data } = await http.post<{ runId: number }>(`/topics/${topicId}/scripts/generate-async`)
+  return data
+}
+
+/** 导演笔记 AI 智能填充:后端综合 currentValues + userFeedback 重写整份 DirectorNote。不落库。 */
+export interface DirectorNoteOptimizeRequest {
+  /** 用户自然语言诉求 */
+  userFeedback: string
+  /** 抽屉里的当前 form(可能含未保存草稿)。空 = 后端回落 DB 里的 directorNote */
+  currentValues: DirectorNote | null
+}
+
+export interface DirectorNoteOptimizeResponse {
+  note: DirectorNote
+  explanation: string | null
+}
+
+export async function optimizeDirectorNote(
+  topicId: number,
+  req: DirectorNoteOptimizeRequest,
+): Promise<DirectorNoteOptimizeResponse> {
+  // 整份导演笔记 token 量大,LLM 20-40s 常见,留 120s 余量
+  const { data } = await http.post<DirectorNoteOptimizeResponse>(
+    `/topics/${topicId}/director-note/optimize`,
+    req,
+    { timeout: 120_000 },
+  )
   return data
 }

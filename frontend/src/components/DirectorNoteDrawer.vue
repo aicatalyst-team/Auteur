@@ -2,10 +2,11 @@
 // 总导演"导演笔记"编辑器(用户手动填写,与 preset 配合使用)。
 // 持久化:走 PATCH /api/topics/{id} 的 directorNote 字段。
 import { computed, ref, watch } from 'vue'
-import { Loader2, Plus, Save, X } from 'lucide-vue-next'
+import { Loader2, Plus, Save, Sparkles, X } from 'lucide-vue-next'
 import { updateTopic } from '../api/topics'
 import { extractError } from '../lib/format'
 import type { DirectorNote } from '../types'
+import DirectorNoteOptimizeDialog from './DirectorNoteOptimizeDialog.vue'
 
 const props = defineProps<{
   open: boolean
@@ -47,6 +48,7 @@ const newMomentTime = ref('')
 const newMomentWhat = ref('')
 const saving = ref(false)
 const saveError = ref<string | null>(null)
+const optimizeOpen = ref(false)
 
 watch(
   () => [props.open, props.initialNote] as const,
@@ -142,20 +144,37 @@ function close() {
   if (saving.value) return
   emit('close')
 }
+
+/** AI 智能填充弹窗 apply 回调:全量替换 form。复用 normalizeNote 兜底,确保 5 段补齐 / 字符串字段不为 undefined。 */
+function onAiApplied(note: DirectorNote) {
+  form.value = normalizeNote(note)
+  saveError.value = null
+}
 </script>
 
 <template>
-  <div v-if="open" class="fixed inset-0 z-50 flex justify-end" @click.self="close">
-    <div class="bg-black/40 absolute inset-0" />
+  <div v-if="open" class="fixed inset-0 z-50 flex justify-end">
+    <div class="absolute inset-0 bg-black/40" @click="close" />
     <aside class="relative h-full w-[640px] bg-white shadow-2xl flex flex-col">
       <header class="px-6 py-4 border-b flex items-center justify-between">
         <div>
           <h2 class="text-lg font-semibold">配置导演笔记</h2>
           <p class="text-sm text-gray-500 mt-0.5">总导演产出全片 vision · 编剧/摄影/美术/剪辑都参考</p>
         </div>
-        <button class="p-1 hover:bg-gray-100 rounded" @click="close" :disabled="saving">
-          <X class="w-5 h-5" />
-        </button>
+        <div class="flex items-center gap-2">
+          <button
+            class="text-xs px-2.5 py-1.5 border rounded hover:bg-amber-50 hover:border-amber-300 disabled:opacity-50 flex items-center gap-1 text-amber-700"
+            :disabled="saving"
+            @click="optimizeOpen = true"
+            title="LLM 综合你已填的内容 + 自然语言诉求重写整份笔记"
+          >
+            <Sparkles class="w-3.5 h-3.5" />
+            AI 智能填充
+          </button>
+          <button class="p-1 hover:bg-gray-100 rounded" @click="close" :disabled="saving">
+            <X class="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       <div class="flex-1 overflow-y-auto p-6 space-y-6">
@@ -324,5 +343,13 @@ function close() {
         </button>
       </footer>
     </aside>
+
+    <DirectorNoteOptimizeDialog
+      :topic-id="topicId"
+      :open="optimizeOpen"
+      :current-values="form"
+      @close="optimizeOpen = false"
+      @applied="onAiApplied"
+    />
   </div>
 </template>
