@@ -50,6 +50,9 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          # Pages 没启用时自动启用(免去手动去 Settings 点 Source 的步骤)
+          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
