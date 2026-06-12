@@ -42,11 +42,12 @@ public interface VideoRenderer {
     /**
      * @param subtitleStyle "standard" 走 SRT force_style 全白字幕;"highlight" 走 ASS 关键词加色加粗。
      * @param compositionId Remotion composition 名(由 preset.composition_id 决定;Remotion 路径必填,ffmpeg 路径可空)。
+     * @param watermarkText 左上角水印文本(由 preset.watermark_text 决定);null/空 = 不加水印。ffmpeg 路径忽略。
      */
     record Request(Long scriptId, List<ImageClip> clips, String audioUrl, String subtitleUrl,
                    String format, int width, int height, BgmConfig bgm, String subtitleStyle,
                    String contentType, String personaJson, String protagonistRefUrl, Long topicId,
-                   HookConfig hook, String compositionId) {}
+                   HookConfig hook, String compositionId, String watermarkText) {}
 
     record Result(String videoUrl, Integer durationSeconds, Integer width, Integer height,
                   String format, BigDecimal costYuan) {}

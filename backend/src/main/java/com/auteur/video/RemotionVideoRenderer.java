@@ -124,7 +124,7 @@ public class RemotionVideoRenderer implements VideoRenderer {
             root.put("audioDurationSec", audioDurationSec);
             root.set("shots", shotsNode);
             root.set("subtitleCues", cuesNode);
-            root.put("watermark", "虚构演绎 仅供娱乐");
+            root.put("watermark", req.watermarkText() == null ? "" : req.watermarkText());
             if (req.bgm() != null && req.bgm().httpUrl() != null && !req.bgm().httpUrl().isBlank()) {
                 root.put("bgmUrl", req.bgm().httpUrl());
                 root.put("bgmVolume", req.bgm().volume());

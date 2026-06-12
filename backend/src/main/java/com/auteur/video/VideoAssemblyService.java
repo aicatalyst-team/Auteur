@@ -360,6 +360,8 @@ public class VideoAssemblyService {
         VideoRenderer.HookConfig hook = topic != null ? prepareHook(clips, topic, voice, ctx) : null;
         String compositionId = ctx != null ? ctx.preset().getCompositionId() : null;
         String presetName = ctx != null ? ctx.preset().getName() : null;
+        // preset.watermark_text 决定水印文本;null/空 = 不加水印。Remotion 的 Watermark 组件已对空值短路。
+        String watermarkText = ctx != null ? ctx.preset().getWatermarkText() : null;
         return new VideoRenderer.Request(
                 scriptId, clips, audioUrl, subUrl, format, width, height, bgmCfg, subtitleStyle,
                 presetName,
@@ -367,7 +369,8 @@ public class VideoAssemblyService {
                 null,
                 topic != null ? topic.getId() : null,
                 hook,
-                compositionId);
+                compositionId,
+                watermarkText);
     }
 
     /**
