@@ -62,6 +62,10 @@ function copyStatic() {
     recursive: true,
     filter,
   })
+  // 图标:Chrome 加载用,manifest.json 里的 icons / action.default_icon 引用。
+  if (existsSync(resolve(ROOT, 'icons'))) {
+    cpSync(resolve(ROOT, 'icons'), resolve(DIST, 'icons'), { recursive: true })
+  }
 }
 
 async function run() {
