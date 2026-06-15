@@ -1,0 +1,41 @@
+# Stage 1: Maven build
+FROM docker.io/library/maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /workspace
+COPY pom.xml .
+RUN mvn -B -q dependency:go-offline
+COPY src ./src
+RUN mvn -B -q -DskipTests package \
+    && mv target/auteur-backend-*.jar target/app.jar
+
+# Stage 2: UBI9 OpenJDK 21 runtime
+FROM registry.access.redhat.com/ubi9/openjdk-21-runtime
+
+USER 0
+
+# Install ffmpeg and CJK fonts for subtitle rendering
+RUN dnf install -y --nodocs \
+    https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    dnf install -y --nodocs ffmpeg-free google-noto-sans-cjk-ttc-fonts && \
+    dnf clean all
+
+WORKDIR /opt/app-root/src
+
+# Copy the JAR
+COPY --from=build /workspace/target/app.jar /opt/app-root/src/app.jar
+
+# Create storage directories
+RUN mkdir -p /opt/app-root/src/storage/voice \
+    /opt/app-root/src/storage/video \
+    /opt/app-root/src/storage/cover \
+    /opt/app-root/src/storage/bgm \
+    /opt/app-root/src/storage/sfx \
+    && chgrp -R 0 /opt/app-root && chmod -R g=u /opt/app-root
+
+ENV SPRING_PROFILES_ACTIVE=docker \
+    JAVA_OPTS="-Xms512m -Xmx1536m"
+
+EXPOSE 8082
+
+USER 1001
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /opt/app-root/src/app.jar"]
