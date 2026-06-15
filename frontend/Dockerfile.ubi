@@ -9,18 +9,18 @@ RUN npm run build
 # Stage 2: UBI9 nginx runtime
 FROM registry.access.redhat.com/ubi9/nginx-124
 
-# Copy nginx config - adjust port from 80 to 8080 for OpenShift
-COPY nginx.conf /tmp/nginx-src.conf
+# Copy built frontend assets to the nginx default html directory
+COPY --from=build /workspace/dist .
 
-# Copy built assets
-COPY --from=build /workspace/dist /opt/app-root/src
+# Copy nginx server config for SPA routing and API proxy
+# UBI9 nginx uses /opt/app-root/etc/nginx.d/ for server blocks
+COPY nginx.conf "${NGINX_CONF_PATH}"
 
-# Create modified nginx config for port 8080 and correct backend service name
+# Fix port 80 -> 8080 and backend service reference for Kubernetes
 USER 0
-RUN sed 's/listen       80;/listen       8080;/' /tmp/nginx-src.conf | \
-    sed 's/proxy_pass http:\/\/backend:8082/proxy_pass http:\/\/auteur-backend.poc-auteur.svc.cluster.local:8082/' \
-    > /etc/nginx/nginx.conf && \
-    rm /tmp/nginx-src.conf && \
+RUN sed -i 's/listen       80;/listen       8080;/' "${NGINX_CONF_PATH}" && \
+    sed -i 's/proxy_pass http:\/\/backend:8082/proxy_pass http:\/\/auteur-backend.poc-auteur.svc.cluster.local:8082/' "${NGINX_CONF_PATH}" && \
+    sed -i 's|root         /usr/share/nginx/html;|root         /opt/app-root/src;|' "${NGINX_CONF_PATH}" && \
     chgrp -R 0 /opt/app-root && chmod -R g=u /opt/app-root
 
 EXPOSE 8080
