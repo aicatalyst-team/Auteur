@@ -13,10 +13,11 @@ FROM registry.access.redhat.com/ubi9/openjdk-21-runtime
 USER 0
 
 # Install ffmpeg and CJK fonts for subtitle rendering
-RUN dnf install -y --nodocs \
+# openjdk-21-runtime uses microdnf
+RUN microdnf install -y --nodocs \
     https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-    dnf install -y --nodocs ffmpeg-free google-noto-sans-cjk-ttc-fonts && \
-    dnf clean all
+    microdnf install -y --nodocs ffmpeg-free google-noto-sans-cjk-ttc-fonts && \
+    microdnf clean all
 
 WORKDIR /opt/app-root/src
 
