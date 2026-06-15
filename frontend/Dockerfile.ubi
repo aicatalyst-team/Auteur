@@ -9,18 +9,18 @@ RUN npm run build
 # Stage 2: UBI9 nginx runtime
 FROM registry.access.redhat.com/ubi9/nginx-124
 
-# Copy built frontend assets to the nginx default html directory
+# Copy built frontend assets
 COPY --from=build /workspace/dist .
 
-# Copy nginx server config for SPA routing and API proxy
-# UBI9 nginx uses /opt/app-root/etc/nginx.d/ for server blocks
-COPY nginx.conf "${NGINX_CONF_PATH}"
+# Copy nginx server config to the include path for server blocks
+# UBI9 nginx includes /opt/app-root/etc/nginx.d/*.conf inside the http {} block
+COPY nginx.conf /opt/app-root/etc/nginx.d/default.conf
 
 # Fix port 80 -> 8080 and backend service reference for Kubernetes
 USER 0
-RUN sed -i 's/listen       80;/listen       8080;/' "${NGINX_CONF_PATH}" && \
-    sed -i 's/proxy_pass http:\/\/backend:8082/proxy_pass http:\/\/auteur-backend.poc-auteur.svc.cluster.local:8082/' "${NGINX_CONF_PATH}" && \
-    sed -i 's|root         /usr/share/nginx/html;|root         /opt/app-root/src;|' "${NGINX_CONF_PATH}" && \
+RUN sed -i 's/listen       80;/listen       8080;/' /opt/app-root/etc/nginx.d/default.conf && \
+    sed -i 's/proxy_pass http:\/\/backend:8082/proxy_pass http:\/\/auteur-backend.poc-auteur.svc.cluster.local:8082/' /opt/app-root/etc/nginx.d/default.conf && \
+    sed -i 's|root         /usr/share/nginx/html;|root         /opt/app-root/src;|' /opt/app-root/etc/nginx.d/default.conf && \
     chgrp -R 0 /opt/app-root && chmod -R g=u /opt/app-root
 
 EXPOSE 8080
