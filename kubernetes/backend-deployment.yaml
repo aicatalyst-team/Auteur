@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auteur-backend
+  namespace: poc-auteur
+  labels:
+    app: auteur-backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auteur-backend
+  template:
+    metadata:
+      labels:
+        app: auteur-backend
+    spec:
+      imagePullSecrets:
+        - name: quay-pull-secret
+      containers:
+        - name: backend
+          image: quay.io/aicatalyst/auteur-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8082
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "docker"
+            - name: MYSQL_HOST
+              value: "mysql"
+            - name: MYSQL_PORT
+              value: "3306"
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: MYSQL_DATABASE
+            - name: MYSQL_USER
+              value: "root"
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysql-credentials
+                  key: MYSQL_PASSWORD
+            - name: JAVA_OPTS
+              value: "-Xms512m -Xmx1536m"
+          volumeMounts:
+            - name: storage
+              mountPath: /opt/app-root/src/storage
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8082
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: auteur-storage

@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auteur-frontend
+  namespace: poc-auteur
+  labels:
+    app: auteur-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auteur-frontend
+  template:
+    metadata:
+      labels:
+        app: auteur-frontend
+    spec:
+      imagePullSecrets:
+        - name: quay-pull-secret
+      containers:
+        - name: frontend
+          image: quay.io/aicatalyst/auteur-frontend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
